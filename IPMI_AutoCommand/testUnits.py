@@ -1,31 +1,34 @@
 import os
 import subprocess
+import logging
+
+from pandas import ExcelFile
 
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
-import pandas as pd
 from datetime import datetime
 from tqdm import tqdm
-from typing import Tuple
+from typing import Tuple, List
 
 from defs import *
 
 class IPMIAutoCmdTest:
     def __init__(
-            self, 
-            excelFile: pd.ExcelFile, 
-            workBook: Workbook, 
-            output_dir: str='./result/', 
-            isOutOfBand: bool=False
-        ) -> None:
+        self, 
+        excelFile: ExcelFile, 
+        workBook: Workbook, 
+        outputDir: str='./result/', 
+        isOutOfBand: bool=False
+    ) -> None:
         self.excelFile = excelFile
         self.workBook = workBook
-        self.output_dir = os.path.abspath(output_dir)
+        self.outputDir = os.path.abspath(outputDir)
         self.isOutOfBand = isOutOfBand
 
         self.time = datetime.now().strftime("%Y-%b-%d_%H-%M")
+        self.logger = logging.getLogger(f'main.{self.__str__()}')
 
         projectInfoDf = self.excelFile.parse('Project Info')
         self.projectInfo = { key: value for key, value in zip(projectInfoDf["Variable"], projectInfoDf["Value"]) }
@@ -35,6 +38,9 @@ class IPMIAutoCmdTest:
         else:
             self.__commandTemplate = "ipmitool raw"
     
+    def __str__(self):
+        return 'IPMIAutoCmdTest'
+
     def __checkConnection(self) -> bool:
         ping = subprocess.Popen(
             f"ping {self.projectInfo['IP']} {'-n' if os.name == 'nt' else '-c'} 4", 
@@ -47,11 +53,17 @@ class IPMIAutoCmdTest:
         stdout, _ = ping.communicate()
 
         if "received, 100% packet loss" in stdout:
+            self.logger.debug('PING LOSS 100%')
             return False
 
         return True
 
-    def __rawCommand(self, netfn: str, cmd: str, *args) -> Tuple[str, str]:
+    def __rawCommand(
+        self, 
+        netfn: str, 
+        cmd: str, 
+        *args: List[str]
+    ) -> Tuple[str, str]:
         shell = f"{self.__commandTemplate} {netfn} {cmd}"
         for arg in args:
             shell += f' {arg}'
@@ -66,9 +78,12 @@ class IPMIAutoCmdTest:
 
         return res.communicate()
 
-    def __writeCell(self, 
+    def __writeCell(
+        self, 
         workSheet: Worksheet,
-        row: int, col: int, value: str, 
+        row: int, 
+        col: int, 
+        value: str, 
         fill: PatternFill=None
     ) -> None:
         cell = workSheet.cell(row=row, column=col)
@@ -77,7 +92,7 @@ class IPMIAutoCmdTest:
             cell.fill = fill
 
     def saveOutput(self) -> None:
-        outputPath = os.path.join(self.output_dir, self.time)
+        outputPath = os.path.join(self.outputDir, self.time)
         if not os.path.exists(outputPath):
             os.makedirs(outputPath)
 
@@ -92,8 +107,13 @@ class IPMIAutoCmdTest:
                 fileName += '_' + format.strip('"').strip("'").strip().replace(' ', '-')
 
         self.workBook.save(os.path.join(outputPath, fileName + '.xlsx'))
-        print(f"Result generated at {os.path.join(outputPath, fileName + '.xlsx')}")
-
+        self.logger.info(f"Result generated at {os.path.join(outputPath, fileName + '.xlsx')}")
+        logging.shutdown()
+        os.rename(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), 'logfile'),
+            os.path.join(outputPath, 'logfile')
+        )
+        
     def testRawCmd(self) -> None:
         if self.isOutOfBand and not self.__checkConnection():
             raise Exception(f"Unable to ping {self.projectInfo['IP']}, make sure the connection is viable.")
@@ -118,10 +138,7 @@ class IPMIAutoCmdTest:
                 parseNetFn(netfn).value, 
                 parseCmd(cmd),
             )
-            # print('STDOUT')
-            # print(stdout)
-            # print('STDERR')
-            # print(stderr)
+            self.logger.debug(stdout.rstrip("\n") if stdout else stderr.rstrip("\n"))
 
             if 'Invalid command' in stderr or 'Unknown' in stderr:
                 self.__writeCell(rawCmdSheet, rowNum, supColNum, CommandStatus.UNAVAILABLE.value, RED_FILL)
