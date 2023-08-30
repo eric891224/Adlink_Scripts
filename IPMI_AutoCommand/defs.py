@@ -3,7 +3,7 @@ import sys
 import logging
 
 from enum import Enum
-from typing import List
+from typing import List, Dict
 from openpyxl.styles import PatternFill
 
 class CommandStatus(Enum):
@@ -20,7 +20,28 @@ class NetFn(Enum):
     TRANSPORT = '0x0c'
     PICMG = '0x2c'
 
+class Result(Enum):
+    PASS = 'P'
+    FAIL = 'F'
+
+class PassLevel(Enum):
+    ALL_MATCH = 'A'
+    LENGTH_MATCH = 'L'
+    IGNORED = 'I'
+
+class DotDict(dict):
+    """
+        dot.notation access to dictionary attributes
+    """      
+    def __getattr__(*args):
+        val = dict.get(*args)         
+        return DotDict(val) if type(val) is dict else val  
+        
+    __setattr__ = dict.__setitem__     
+    __delattr__ = dict.__delitem__ 
+
 GREEN_FILL = PatternFill(start_color='00ff00', fill_type='solid')
+DARK_GREEN_FILL = PatternFill(start_color='008000', fill_type='solid')
 RED_FILL = PatternFill(start_color='ff0000', fill_type='solid')
 
 def parseNetFn(netfn: str) -> NetFn:
@@ -36,6 +57,16 @@ def parseNetFn(netfn: str) -> NetFn:
 
 def parseCmd(cmd: str) -> str:
     return f'0x{cmd.rstrip("h")}'
+
+def parseFruInfo(stdout: str) -> Dict[str, str]:
+    stdout = stdout.split('\n')
+    fruInfo = {}
+    for line in stdout:
+        if ':' in line:
+            line = line.split(':')
+            fruInfo[line[0].strip(" ")] = line[1].strip(" ")
+
+    return fruInfo
 
 def getLoggingFileHandler(outputPath: str) -> List[logging.FileHandler]:
     fileHandler = logging.FileHandler(os.path.join(outputPath, 'logfile'))

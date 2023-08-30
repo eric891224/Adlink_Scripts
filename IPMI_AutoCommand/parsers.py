@@ -22,9 +22,24 @@ def IPMIAutoCommandParser() -> argparse.ArgumentParser:
         help='Toggle Out-of-band / In-band'
     )
     parser.add_argument(
+        '-S', '--raw-support-test',
+        action='store_true',
+        help='Run IPMI Commands Support Verification'
+    )
+    parser.add_argument(
         '-F', '--functional-test',
         action='store_true',
-        help='Run Functional Test For IPMI Commands. When Not Set, Only Check Commands Support'
+        help='Run IPMI Commands Functional Test'
+    )
+    parser.add_argument(
+        '-f', '--fru',
+        action='store_true',
+        help='Run Fru Test'
+    )
+    parser.add_argument(
+        '-s', '--sensor',
+        action='store_true',
+        help='Run Sensor Test'
     )
 
     return parser
