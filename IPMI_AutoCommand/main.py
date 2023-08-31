@@ -14,7 +14,7 @@ from parsers import IPMIAutoCommandParser
 def exit_gracefully(logger: logging.Logger, sig: int, frame) -> None:
     logger.info('Program terminated')
     logging.shutdown()
-    os.remove(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'logfile'))
+    os.remove(os.path.join(os.path.dirname(os.path.realpath(__file__)), LOGFILE_NAME))
     sys.exit(0)
 
 if __name__ == '__main__':
@@ -44,6 +44,4 @@ if __name__ == '__main__':
         doSensorTest=args.sensor
     )
 
-    # tester.testRawSupport()
-    # tester.saveOutput()
     tester.runTest()

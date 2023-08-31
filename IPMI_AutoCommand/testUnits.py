@@ -143,8 +143,8 @@ class IPMIAutoCommandTest:
         self.logger.info(f"Result generated at {os.path.join(outputPath, fileName + '.xlsx')}")
         logging.shutdown()
         os.rename(
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), 'logfile'),
-            os.path.join(outputPath, 'logfile')
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), LOGFILE_NAME),
+            os.path.join(outputPath, LOGFILE_NAME)
         )
 
     def runTest(self) -> None:
@@ -247,7 +247,53 @@ class IPMIAutoCommandTest:
                     self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
                     self.__writeCell(fruInfoSheet, rowNum, passColNum, "", RED_FILL)
         else:
-            self.logger.info('TODO: error handling')
+            self.logger.error(f'TODO: error handling\n STDERR: \n{stderr}')
+            raise NotImplementedError()
+
         
     def testSensor(self) -> None:
         self.logger.info("===Testing Sensor===")
+        sensorInfoDf = self.excelFile.parse('Sensor Info', header=1)
+        sensorInfoSheet = self.workBook['Sensor Info']
+
+        for row in sensorInfoSheet.iter_rows(max_row=2, values_only=True):
+            labels = row
+
+        resultColNum = labels.index('Result (P: pass/F: fail)') + 1
+        errResColNum = labels.index('Error Response') + 1
+
+        for sensorName, sensorIndex,rowNum in tqdm(
+            zip(sensorInfoDf['Sensor Name'], range(len(sensorInfoDf['Sensor Name'])), range(3, len(sensorInfoDf['Sensor Name'])+3)),
+            desc='Testing...',
+            total=len(sensorInfoDf['Sensor Name']),
+            ncols=100,
+            leave=True
+        ):
+            passCount = 0
+            stdout, stderr = self.__generalCommand("sensor", "get", sensorName)
+
+            if not stderr:
+                if sensorInfoDf['Sensor Type'][sensorIndex].lower() in ['discrete', 'watchdog']:
+                    self.__writeCell(sensorInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    continue
+
+                sensorInfo = parseSensorInfo(stdout)
+                self.logger.debug(sensorInfo)
+
+                for status in SENSOR_THRESHOLD.keys():
+                    statusAbbr = SENSOR_THRESHOLD[status]
+                    outputStatusColNum = [colNum for colNum, label in enumerate(labels) if label == statusAbbr][1] + 1
+                    if float(sensorInfoDf[statusAbbr][sensorIndex]) == float(sensorInfo[status]):
+                        self.__writeCell(sensorInfoSheet, rowNum, outputStatusColNum, sensorInfo[status])
+                        passCount += 1
+                    else:
+                        self.__writeCell(sensorInfoSheet, rowNum, outputStatusColNum, sensorInfo[status], RED_FILL)
+
+                if passCount == 6:
+                    self.__writeCell(sensorInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                else:
+                    self.__writeCell(sensorInfoSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
+            else:
+                self.logger.debug(stderr.strip('\n'))
+                self.__writeCell(sensorInfoSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
+                self.__writeCell(sensorInfoSheet, rowNum, errResColNum, stderr)

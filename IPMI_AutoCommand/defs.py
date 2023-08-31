@@ -44,6 +44,17 @@ GREEN_FILL = PatternFill(start_color='00ff00', fill_type='solid')
 DARK_GREEN_FILL = PatternFill(start_color='008000', fill_type='solid')
 RED_FILL = PatternFill(start_color='ff0000', fill_type='solid')
 
+LOGFILE_NAME = "logfile.log"
+
+SENSOR_THRESHOLD = {
+    "Lower Non-Critical": "LNC",
+    "Lower Critical": "LC",
+    "Lower Non-Recoverable": "LNR",
+    "Upper Non-Critical": "UNC",
+    "Upper Critical": "UC",
+    "Upper Non-Recoverable": "UNR"
+}
+
 def parseNetFn(netfn: str) -> NetFn:
     if netfn == 'Chassis': return NetFn.CHASSIS
     elif netfn == 'Bridge': return NetFn.BRIDGE
@@ -64,12 +75,22 @@ def parseFruInfo(stdout: str) -> Dict[str, str]:
     for line in stdout:
         if ':' in line:
             line = line.split(':')
-            fruInfo[line[0].strip(" ")] = line[1].strip(" ")
+            fruInfo[line[0].strip(" ")] = line[1].strip(' ') if len(line) <= 2 else ':'.join(line[1:]).strip(' ')
 
     return fruInfo
 
+def parseSensorInfo(stdout: str) -> Dict[str, str]:
+    stdout = stdout.split('\n')
+    sensorInfo = {}
+    for line in stdout:
+        if ':' in line:
+            line = line.split(':')
+            sensorInfo[line[0].strip(' ')] = line[1].strip(' ') if len(line) <= 2 else ':'.join(line[1:]).strip(' ')
+
+    return sensorInfo
+
 def getLoggingFileHandler(outputPath: str) -> List[logging.FileHandler]:
-    fileHandler = logging.FileHandler(os.path.join(outputPath, 'logfile'))
+    fileHandler = logging.FileHandler(os.path.join(outputPath, LOGFILE_NAME), 'w')
     fileHandler.setLevel(logging.DEBUG)
 
     streamHandler = logging.StreamHandler(stream=sys.stdout)
