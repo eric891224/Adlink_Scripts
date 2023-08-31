@@ -5,6 +5,7 @@ import logging
 from enum import Enum
 from typing import List, Dict
 from openpyxl.styles import PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 
 class CommandStatus(Enum):
     AVAILABLE = 'A'
@@ -88,6 +89,13 @@ def parseSensorInfo(stdout: str) -> Dict[str, str]:
             sensorInfo[line[0].strip(' ')] = line[1].strip(' ') if len(line) <= 2 else ':'.join(line[1:]).strip(' ')
 
     return sensorInfo
+
+def isWorkSheetColEmpty(workSheet: Worksheet, startRow: int, colNum: int) -> bool:
+    for row in workSheet.iter_rows(min_row=startRow, max_row=workSheet.max_row, min_col=colNum, max_col=colNum):
+        for cell in row:
+            if cell.value is not None:  # Check if cell is not empty
+                return False
+    return True
 
 def getLoggingFileHandler(outputPath: str) -> List[logging.FileHandler]:
     fileHandler = logging.FileHandler(os.path.join(outputPath, LOGFILE_NAME), 'w')

@@ -2,6 +2,8 @@ import os
 import subprocess
 import logging
 
+import pandas as pd
+
 from pandas import ExcelFile
 
 from openpyxl import Workbook
@@ -196,8 +198,90 @@ class IPMIAutoCommandTest:
                 self.__writeCell(rawCmdSheet, rowNum, supColNum, CommandStatus.AVAILABLE.value, GREEN_FILL)
                 
     def testRawFunction(self) -> None:
+        rawCmdDf = self.excelFile.parse('Raw CMD', header=1)
+        rawCmdSheet = self.workBook['Raw CMD']
+        # if (rawCmdDf['Availability (A: available/U: unavailable)'].dropna().empty):
+        #     self.logger.info("IPMI cmd support not tested, proceed to test raw support...")
+        #     self.testRawSupport()
+
+        for row in rawCmdSheet.iter_rows(max_row=2, values_only=True):
+            labels = row
+        
+        cmdStatusColNum = labels.index('Availability (A: available/U: unavailable)') + 1
+        resColNum = labels.index('Res Data') + 1
+        resultColNum = labels.index('Result (P: pass/F: fail)') + 1
+        passColnum = labels.index('Pass Level (A: all match, L: length match, I: ignored)') + 1
+
+        if (isWorkSheetColEmpty(rawCmdSheet, 3, cmdStatusColNum)):
+            self.logger.info("IPMI cmd support not tested, proceed to test raw support...")
+            self.testRawSupport()
+
         self.logger.info("===Testing Raw Function===")
-        pass
+
+        for netfn, cmd, reqLen, reqData, expectedLen, expectedData, rowNum in tqdm(
+            zip(
+                rawCmdDf['NetFn'], 
+                rawCmdDf['CMD'],
+                rawCmdDf['Req Length'], 
+                rawCmdDf['Req Data'], 
+                rawCmdDf['Res Length'], 
+                rawCmdDf['Expected Res Data'], 
+                range(3, len(rawCmdDf['Req Length'])+3)
+            ),
+            desc='Testing...',
+            total=len(rawCmdDf['Req Length']),
+            ncols=100,
+            leave=True
+        ):
+            cmdStatus = rawCmdSheet.cell(rowNum, cmdStatusColNum).value
+            if cmdStatus == None:
+                continue
+            if pd.isnull(reqLen) or cmdStatus == CommandStatus.UNAVAILABLE.value:
+                self.__writeCell(rawCmdSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
+                self.__writeCell(rawCmdSheet, rowNum, passColnum, "", RED_FILL)
+                continue
+
+            if not pd.isnull(expectedData) and float(expectedLen) != len(expectedData.strip(' ').split(' ')):
+                self.logger.error(f"Expected length inconsistent with expected data at row {rowNum}")
+                raise Exception(f"Expected length inconsistent with expected data at row {rowNum}")
+
+            if float(reqLen) != 0 and pd.isnull(reqData) or float(reqLen) == 0 and not pd.isnull(reqData):
+                self.logger.error(f"Req length inconsistent with req data at row {rowNum}")
+                raise Exception(f"Req length inconsistent with req data at row {rowNum}")
+            elif float(reqLen) == 0 and pd.isnull(reqData):
+                reqData = []
+            elif float(reqLen) != 0 and not pd.isnull(reqData):
+                reqData = reqData.strip(' ').split(' ')
+
+            if len(reqData) != float(reqLen):
+                self.logger.error(f"Req length inconsistent with req data at row {rowNum}")
+                raise Exception(f"Req length inconsistent with req data at row {rowNum}")
+            
+            stdout, stderr = self.__rawCommand(
+                parseNetFn(netfn).value, 
+                parseCmd(cmd),
+                *reqData
+            )
+
+            if not stderr:
+                stdout = stdout.strip('\n').strip(' ')
+                self.logger.debug(stdout)
+                self.__writeCell(rawCmdSheet, rowNum, resColNum, stdout)
+                if not pd.isnull(expectedData) and expectedData.strip(' ') == stdout:
+                    self.__writeCell(rawCmdSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    self.__writeCell(rawCmdSheet, rowNum, passColnum, PassLevel.ALL_MATCH.value, GREEN_FILL)
+                elif float(expectedLen) == len(stdout.split(' ')):
+                    self.__writeCell(rawCmdSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    self.__writeCell(rawCmdSheet, rowNum, passColnum, PassLevel.LENGTH_MATCH.value, DARK_GREEN_FILL)
+                else:
+                    self.__writeCell(rawCmdSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
+                    self.__writeCell(rawCmdSheet, rowNum, passColnum, "", RED_FILL)
+            else:
+                stderr = stderr.strip('\n').strip(' ')
+                self.logger.debug(stderr)
+                self.__writeCell(rawCmdSheet, rowNum, resColNum, stderr)
+                self.__writeCell(rawCmdSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
+                self.__writeCell(rawCmdSheet, rowNum, passColnum, "", RED_FILL)
 
     def testFru(self) -> None:
         self.logger.info("===Testing Fru===")
@@ -238,7 +322,7 @@ class IPMIAutoCommandTest:
                 elif hasTag and expectedData != fruInfo[IPMITag] and len(expectedData) == len(fruInfo[IPMITag]):
                     self.__writeCell(fruInfoSheet, rowNum, resColNum, fruInfo[IPMITag])
                     self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
-                    self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.LENGTH_MATCH.value, GREEN_FILL)
+                    self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.LENGTH_MATCH.value, DARK_GREEN_FILL)
                 elif not hasTag and expectedData == '[null]':
                     self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
                     self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.ALL_MATCH.value, GREEN_FILL)
@@ -247,10 +331,40 @@ class IPMIAutoCommandTest:
                     self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
                     self.__writeCell(fruInfoSheet, rowNum, passColNum, "", RED_FILL)
         else:
-            self.logger.error(f'TODO: error handling\n STDERR: \n{stderr}')
-            raise NotImplementedError()
+            self.logger.warning(f'STDERR: {stderr}')
+            self.logger.debug(f'STDOUT: {stdout}')
+            fruInfo = parseFruInfo(stdout)
+            for IPMITag, expectedData, rowNum in tqdm(
+                zip(fruInfoDf['IPMI Tag'], fruInfoDf['Expected Data'], range(2, len(fruInfoDf['IPMI Tag'])+2)),
+                desc='Testing...',
+                total=len(fruInfoDf['IPMI Tag']),
+                ncols=100,
+                leave=True
+            ):
+                hasTag = IPMITag in fruInfo.keys()
 
-        
+                if expectedData == '[ignored]':
+                    self.__writeCell(fruInfoSheet, rowNum, resColNum, fruInfo[IPMITag] if hasTag else "")
+                    self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.IGNORED.value, DARK_GREEN_FILL)
+                    continue
+                
+                if hasTag and expectedData == fruInfo[IPMITag]:
+                    self.__writeCell(fruInfoSheet, rowNum, resColNum, fruInfo[IPMITag])
+                    self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.ALL_MATCH.value, GREEN_FILL)
+                elif hasTag and expectedData != fruInfo[IPMITag] and len(expectedData) == len(fruInfo[IPMITag]):
+                    self.__writeCell(fruInfoSheet, rowNum, resColNum, fruInfo[IPMITag])
+                    self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.LENGTH_MATCH.value, DARK_GREEN_FILL)
+                elif not hasTag and expectedData == '[null]':
+                    self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.PASS.value, GREEN_FILL)
+                    self.__writeCell(fruInfoSheet, rowNum, passColNum, PassLevel.ALL_MATCH.value, GREEN_FILL)
+                else:
+                    self.__writeCell(fruInfoSheet, rowNum, resColNum, fruInfo[IPMITag] if hasTag else "")
+                    self.__writeCell(fruInfoSheet, rowNum, resultColNum, Result.FAIL.value, RED_FILL)
+                    self.__writeCell(fruInfoSheet, rowNum, passColNum, "", RED_FILL)
+
     def testSensor(self) -> None:
         self.logger.info("===Testing Sensor===")
         sensorInfoDf = self.excelFile.parse('Sensor Info', header=1)
