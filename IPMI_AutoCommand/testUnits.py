@@ -40,7 +40,7 @@ class IPMIAutoCommandTest:
         if isOutOfBand:
             self.__commandTemplate = f"ipmitool -I lanplus -H {self.projectInfo['IP']} -U {self.projectInfo['Account_Name']} -P {self.projectInfo['Account_Password']}"
         else:
-            self.__commandTemplate = "ipmitool"
+            self.__commandTemplate = f"ipmitool{' -I wmi' if os.name == 'nt' else ''}"
     
     def __str__(self) -> str:
         return 'IPMIAutoCommandTest'
