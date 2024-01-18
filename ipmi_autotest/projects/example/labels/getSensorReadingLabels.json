@@ -1,0 +1,34 @@
+{
+    "data": [
+        {
+            "req": ["0x03"],
+            "res": "00 20 00 00",
+            "description": ""
+        },
+        {
+            "req": ["0x05"],
+            "res": "00 20 00 00",
+            "description": ""
+        },
+        {
+            "req": ["0x0b"],
+            "res": "00 40 02 00",
+            "description": ""
+        },
+        {
+            "req": ["0x12"],
+            "res": "00 20 00 00",
+            "description": ""
+        },
+        {
+            "req": ["0xa6"],
+            "res": "00 20 00 00",
+            "description": ""
+        },
+        {
+            "req": ["0xd8"],
+            "res": "00 40 00 00",
+            "description": ""
+        }
+    ]
+}
